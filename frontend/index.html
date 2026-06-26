@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="theme-color" content="#1a1a2e">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Wardrobe — Your Smart Closet</title>
+<link rel="manifest" href="manifest.json">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- Auth Screen -->
+<div id="auth-screen" class="screen active">
+  <div class="auth-hero">
+    <div class="auth-logo">👗</div>
+    <h1>Wardrobe</h1>
+    <p>Your smart closet. Outfit suggestions, wear tracking, and gap analysis — all from your phone.</p>
+    <button id="google-signin-btn" class="btn-primary btn-lg">
+      <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M17.64 9.205c0-.639-.057-1.252-.164-1.841H9v3.481h4.844a4.14 4.14 0 0 1-1.796 2.716v2.259h2.908c1.702-1.567 2.684-3.875 2.684-6.615Z" fill="#4285F4"/><path d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18Z" fill="#34A853"/><path d="M3.964 10.71A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.042l3.007-2.332Z" fill="#FBBC05"/><path d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58Z" fill="#EA4335"/></svg>
+      Continue with Google
+    </button>
+    <p class="auth-note">Your wardrobe, synced across all your devices.</p>
+  </div>
+</div>
+
+<!-- Main App -->
+<div id="app-screen" class="screen">
+
+  <!-- Top Bar -->
+  <header class="top-bar">
+    <div class="top-bar-left">
+      <span class="app-name">👗 Wardrobe</span>
+    </div>
+    <div class="top-bar-right">
+      <button id="add-item-btn" class="icon-btn" title="Add clothing">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+      </button>
+      <button id="user-menu-btn" class="avatar-btn" title="Account">
+        <img id="user-avatar" src="" alt="User" onerror="this.style.display='none';document.getElementById('user-initials').style.display='flex'">
+        <span id="user-initials" class="avatar-initials" style="display:none"></span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Tab Content Area -->
+  <main class="main-content">
+
+    <!-- HOME / Suggest Tab -->
+    <section id="tab-home" class="tab-pane active">
+      <div class="section-header">
+        <h2>Today's Picks</h2>
+        <button id="refresh-suggest-btn" class="text-btn">Refresh ↺</button>
+      </div>
+      <div id="today-outfit" class="outfit-hero-card">
+        <div class="outfit-placeholder">
+          <span>✨</span>
+          <p>Add clothes to get outfit suggestions</p>
+        </div>
+      </div>
+      <div class="section-header" style="margin-top:24px">
+        <h2>More Options</h2>
+      </div>
+      <div id="alt-outfits" class="outfit-grid"></div>
+
+      <div class="section-header" style="margin-top:24px">
+        <h2>Wear Stats</h2>
+      </div>
+      <div class="stats-row">
+        <div class="stat-card"><div class="stat-number" id="stat-items">—</div><div class="stat-label">Items</div></div>
+        <div class="stat-card"><div class="stat-number" id="stat-outfits">—</div><div class="stat-label">Outfits</div></div>
+        <div class="stat-card"><div class="stat-number" id="stat-worn">—</div><div class="stat-label">Worn today</div></div>
+      </div>
+    </section>
+
+    <!-- WARDROBE Tab -->
+    <section id="tab-wardrobe" class="tab-pane">
+      <div class="filter-bar">
+        <button class="filter-chip active" data-cat="all">All</button>
+        <button class="filter-chip" data-cat="top">Tops</button>
+        <button class="filter-chip" data-cat="bottom">Bottoms</button>
+        <button class="filter-chip" data-cat="footwear">Footwear</button>
+        <button class="filter-chip" data-cat="outerwear">Outerwear</button>
+        <button class="filter-chip" data-cat="accessory">Accessories</button>
+      </div>
+      <div id="wardrobe-grid" class="wardrobe-grid">
+        <div class="empty-state">
+          <span>👗</span>
+          <p>Your wardrobe is empty</p>
+          <button class="btn-primary" id="add-first-item">Add your first item</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- OUTFITS Tab -->
+    <section id="tab-outfits" class="tab-pane">
+      <div class="section-header">
+        <h2>Saved Outfits</h2>
+        <button id="create-outfit-btn" class="text-btn">+ New</button>
+      </div>
+      <div id="outfits-list" class="outfit-list">
+        <div class="empty-state">
+          <span>👔</span>
+          <p>No outfits saved yet</p>
+          <p class="empty-hint">Get a suggestion on the Home tab and save it!</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- LOG Tab -->
+    <section id="tab-log" class="tab-pane">
+      <div class="section-header">
+        <h2>Wear Log</h2>
+        <span class="badge-today">Today</span>
+      </div>
+      <div id="log-today" class="log-section">
+        <p class="log-date">Today — <span id="today-date"></span></p>
+        <div id="today-worn" class="worn-chips"></div>
+        <button id="log-worn-btn" class="btn-secondary">+ Log what I'm wearing</button>
+      </div>
+      <div class="section-header" style="margin-top:24px"><h2>History</h2></div>
+      <div id="wear-history" class="wear-history"></div>
+    </section>
+
+    <!-- GAPS Tab -->
+    <section id="tab-gaps" class="tab-pane">
+      <div class="section-header">
+        <h2>Wardrobe Gaps</h2>
+        <button id="analyze-gaps-btn" class="text-btn">Analyze ✨</button>
+      </div>
+      <div id="gap-analysis" class="gap-cards">
+        <div class="empty-state">
+          <span>🛍️</span>
+          <p>Add more clothes and log your wear to discover gaps</p>
+          <button id="run-gap-btn" class="btn-secondary">Run Analysis</button>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Bottom Nav -->
+  <nav class="bottom-nav">
+    <button class="nav-btn active" data-tab="home">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9,22 9,12 15,12 15,22"/></svg>
+      <span>Home</span>
+    </button>
+    <button class="nav-btn" data-tab="wardrobe">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+      <span>Wardrobe</span>
+    </button>
+    <button class="nav-btn" data-tab="outfits">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20.38 3.46L16 2a4 4 0 0 1-8 0L3.62 3.46a2 2 0 0 0-1.34 2.23l.58 3.57a1 1 0 0 0 .99.84H6v10c0 1.1.9 2 2 2h8a2 2 0 0 0 2-2V10h2.15a1 1 0 0 0 .99-.84l.58-3.57a2 2 0 0 0-1.34-2.23z"/></svg>
+      <span>Outfits</span>
+    </button>
+    <button class="nav-btn" data-tab="log">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+      <span>Log</span>
+    </button>
+    <button class="nav-btn" data-tab="gaps">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+      <span>Gaps</span>
+    </button>
+  </nav>
+</div>
+
+<!-- ADD ITEM MODAL -->
+<div id="add-item-modal" class="modal-overlay" style="display:none">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Add Clothing Item</h3>
+      <button class="close-modal-btn" data-modal="add-item-modal">✕</button>
+    </div>
+    <div class="modal-body">
+      <!-- Photo capture -->
+      <div class="photo-capture-area" id="photo-area">
+        <input type="file" id="photo-input" accept="image/*" capture="environment" style="display:none">
+        <div id="photo-preview" style="display:none">
+          <img id="preview-img" src="" alt="Preview">
+          <button class="retake-btn" id="retake-btn">📷 Retake</button>
+        </div>
+        <div id="photo-placeholder" class="photo-placeholder">
+          <span>📷</span>
+          <p>Take a photo or upload</p>
+          <div class="photo-btns">
+            <button class="btn-secondary" id="take-photo-btn">📷 Camera</button>
+            <button class="btn-secondary" id="upload-photo-btn">🖼️ Gallery</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- AI Analysis Results -->
+      <div id="ai-analysis" class="ai-analysis" style="display:none">
+        <div class="analysis-header">✨ AI Analysis</div>
+        <div id="analysis-content" class="analysis-grid"></div>
+      </div>
+
+      <!-- Form fields -->
+      <div class="form-group">
+        <label>Category</label>
+        <select id="item-category">
+          <option value="">Select category...</option>
+          <option value="top">Top / Shirt / T-shirt</option>
+          <option value="bottom">Bottom / Trouser / Skirt</option>
+          <option value="footwear">Footwear</option>
+          <option value="outerwear">Outerwear / Jacket</option>
+          <option value="accessory">Accessory</option>
+          <option value="formal">Formal wear</option>
+          <option value="ethnic">Ethnic wear</option>
+          <option value="innerwear">Innerwear</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Name / Description</label>
+        <input type="text" id="item-name" placeholder="e.g. Blue Oxford Shirt">
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Color</label>
+          <input type="text" id="item-color" placeholder="e.g. Navy Blue">
+        </div>
+        <div class="form-group">
+          <label>Brand (optional)</label>
+          <input type="text" id="item-brand" placeholder="e.g. Zara">
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Occasion</label>
+        <div class="chip-select" id="occasion-chips">
+          <button class="chip-toggle" data-val="office">Office</button>
+          <button class="chip-toggle" data-val="casual">Casual</button>
+          <button class="chip-toggle" data-val="formal">Formal</button>
+          <button class="chip-toggle" data-val="party">Party</button>
+          <button class="chip-toggle" data-val="gym">Gym</button>
+          <button class="chip-toggle" data-val="ethnic">Ethnic</button>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Season</label>
+        <div class="chip-select" id="season-chips">
+          <button class="chip-toggle" data-val="all">All season</button>
+          <button class="chip-toggle" data-val="summer">Summer</button>
+          <button class="chip-toggle" data-val="winter">Winter</button>
+          <button class="chip-toggle" data-val="monsoon">Monsoon</button>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-secondary" id="analyze-btn">✨ Analyze with AI</button>
+      <button class="btn-primary" id="save-item-btn">Save Item</button>
+    </div>
+  </div>
+</div>
+
+<!-- LOG WORN MODAL -->
+<div id="log-modal" class="modal-overlay" style="display:none">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Log Today's Outfit</h3>
+      <button class="close-modal-btn" data-modal="log-modal">✕</button>
+    </div>
+    <div class="modal-body">
+      <p class="modal-hint">Select items you're wearing today to office:</p>
+      <div id="log-item-grid" class="wardrobe-grid small"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-primary" id="confirm-log-btn">Log Outfit</button>
+    </div>
+  </div>
+</div>
+
+<!-- ITEM DETAIL MODAL -->
+<div id="item-detail-modal" class="modal-overlay" style="display:none">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="detail-title">Item Details</h3>
+      <button class="close-modal-btn" data-modal="item-detail-modal">✕</button>
+    </div>
+    <div class="modal-body" id="item-detail-body"></div>
+    <div class="modal-footer">
+      <button class="btn-danger" id="delete-item-btn">Delete</button>
+      <button class="btn-primary" id="find-combo-btn">✨ Find Combinations</button>
+    </div>
+  </div>
+</div>
+
+<!-- TOAST -->
+<div id="toast" class="toast"></div>
+<!-- LOADING OVERLAY -->
+<div id="loading" class="loading-overlay" style="display:none">
+  <div class="spinner"></div>
+  <p id="loading-text">Analyzing...</p>
+</div>
+
+<!-- Firebase SDK -->
+<script type="module" src="firebase-config.js"></script>
+<script type="module" src="app.js"></script>
+</body>
+</html>
