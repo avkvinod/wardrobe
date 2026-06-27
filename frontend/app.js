@@ -49,7 +49,7 @@ async function deleteFromCloudinary(publicId) {
 
 // ─── BACKEND API URL ───────────────────────────────────────────────────────
 // Set this to your Render backend URL after deploying
-const API_URL = "https://YOUR-RENDER-APP.onrender.com";
+const API_URL = "https://wardrobe-api-6h2a.onrender.com";
 
 // ─── APP STATE ─────────────────────────────────────────────────────────────
 let currentUser = null;
