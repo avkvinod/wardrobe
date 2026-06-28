@@ -8,10 +8,12 @@ import { getAuth, GoogleAuthProvider } from "https://www.gstatic.com/firebasejs/
 import { getFirestore } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
 const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
-  projectId: "YOUR_PROJECT_ID",
-  // ✅ No storageBucket needed — photos go to Cloudinary
+  apiKey: "AIzaSyC3rQSx6cOU33Wnc1aQOpgaJsqOygr26SE",
+  authDomain: "wardrobe-2e29b.firebaseapp.com",
+  projectId: "wardrobe-2e29b",
+  storageBucket: "wardrobe-2e29b.firebasestorage.app",
+  messagingSenderId: "859791675869",
+  appId: "1:859791675869:web:9352f432faeff08e0da634"
 };
 
 const app = initializeApp(firebaseConfig);
