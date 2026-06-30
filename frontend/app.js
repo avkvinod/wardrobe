@@ -14,8 +14,6 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
 // ─── CLOUDINARY UPLOAD ─────────────────────────────────────────────────────
-// No SDK needed — Cloudinary has a simple unsigned upload REST API.
-// Photos go directly from the browser to Cloudinary; we only store the URL in Firestore.
 async function uploadToCloudinary(file) {
   const formData = new FormData();
   formData.append("file", file);
@@ -28,13 +26,10 @@ async function uploadToCloudinary(file) {
   );
   if (!res.ok) throw new Error("Cloudinary upload failed: " + res.status);
   const data = await res.json();
-  // Return both the CDN URL and the public_id (needed to delete later)
   return { url: data.secure_url, publicId: data.public_id };
 }
 
 async function deleteFromCloudinary(publicId) {
-  // Deletion from the browser requires a signed request, so we route it
-  // through the Render backend which holds the API secret.
   if (!publicId) return;
   try {
     await fetch(`${API_URL}/delete-image`, {
@@ -43,12 +38,11 @@ async function deleteFromCloudinary(publicId) {
       body: JSON.stringify({ public_id: publicId })
     });
   } catch (e) {
-    console.warn("Cloudinary delete failed (image may remain):", e);
+    console.warn("Cloudinary delete failed:", e);
   }
 }
 
 // ─── BACKEND API URL ───────────────────────────────────────────────────────
-// Set this to your Render backend URL after deploying
 const API_URL = "https://wardrobe-api-6h2a.onrender.com";
 
 // ─── APP STATE ─────────────────────────────────────────────────────────────
@@ -56,6 +50,7 @@ let currentUser = null;
 let wardrobeItems = [];
 let savedOutfits = [];
 let wearLog = [];
+let wishlistItems = [];
 let selectedPhotoFile = null;
 let selectedPhotoBase64 = null;
 let currentFilterCat = "all";
@@ -96,10 +91,7 @@ onAuthStateChanged(auth, user => {
     $("auth-screen").classList.remove("active");
     $("app-screen").classList.add("active");
 
-    // Set avatar
-    if (user.photoURL) {
-      $("user-avatar").src = user.photoURL;
-    }
+    if (user.photoURL) $("user-avatar").src = user.photoURL;
     const initials = (user.displayName || user.email || "U")
       .split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2);
     $("user-initials").textContent = initials;
@@ -114,9 +106,7 @@ onAuthStateChanged(auth, user => {
 });
 
 $("user-menu-btn").addEventListener("click", async () => {
-  if (confirm("Sign out?")) {
-    await signOut(auth);
-  }
+  if (confirm("Sign out?")) await signOut(auth);
 });
 
 // ─── NAVIGATION ────────────────────────────────────────────────────────────
@@ -138,7 +128,6 @@ async function loadAll() {
   if (!currentUser) return;
   const uid = currentUser.uid;
 
-  // Live listener for wardrobe items
   onSnapshot(
     query(collection(db, "users", uid, "items"), orderBy("createdAt", "desc")),
     snap => {
@@ -149,7 +138,6 @@ async function loadAll() {
     }
   );
 
-  // Live listener for outfits
   onSnapshot(
     query(collection(db, "users", uid, "outfits"), orderBy("createdAt", "desc")),
     snap => {
@@ -158,12 +146,19 @@ async function loadAll() {
     }
   );
 
-  // Live listener for wear log
   onSnapshot(
     query(collection(db, "users", uid, "wearlog"), orderBy("date", "desc")),
     snap => {
       wearLog = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       renderLog();
+    }
+  );
+
+  onSnapshot(
+    query(collection(db, "users", uid, "wishlist"), orderBy("addedAt", "desc")),
+    snap => {
+      wishlistItems = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      renderShoppingList();
     }
   );
 
@@ -182,9 +177,9 @@ function renderWardrobeGrid(filter = currentFilterCat) {
   if (items.length === 0) {
     grid.innerHTML = `
       <div class="empty-state">
-        <span>👗</span>
+        <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20.38 3.46L16 2a4 4 0 0 1-8 0L3.62 3.46a2 2 0 0 0-1.34 2.23l.58 3.57a1 1 0 0 0 .99.84H6v10c0 1.1.9 2 2 2h8a2 2 0 0 0 2-2V10h2.15a1 1 0 0 0 .99-.84l.58-3.57a2 2 0 0 0-1.34-2.23z"/></svg>
         <p>${filter === "all" ? "Your wardrobe is empty" : "No " + filter + " items yet"}</p>
-        ${filter === "all" ? '<button class="btn-primary" id="add-first-item">Add your first item</button>' : ""}
+        ${filter === "all" ? '<button class="btn-primary" id="add-first-item" style="width:auto;margin-top:12px">Add your first item</button>' : ""}
       </div>`;
     $("add-first-item")?.addEventListener("click", () => showModal("add-item-modal"));
     return;
@@ -207,7 +202,6 @@ function renderWardrobeGrid(filter = currentFilterCat) {
   });
 }
 
-// Filter chips
 document.querySelectorAll(".filter-chip").forEach(chip => {
   chip.addEventListener("click", () => {
     document.querySelectorAll(".filter-chip").forEach(c => c.classList.remove("active"));
@@ -231,7 +225,7 @@ async function renderSuggestions() {
   if (wardrobeItems.length < 2) {
     $("today-outfit").innerHTML = `
       <div class="outfit-placeholder">
-        <span>✨</span>
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20.38 3.46L16 2a4 4 0 0 1-8 0L3.62 3.46a2 2 0 0 0-1.34 2.23l.58 3.57a1 1 0 0 0 .99.84H6v10c0 1.1.9 2 2 2h8a2 2 0 0 0 2-2V10h2.15a1 1 0 0 0 .99-.84l.58-3.57a2 2 0 0 0-1.34-2.23z"/></svg>
         <p>Add at least 2 clothing items to get outfit suggestions</p>
       </div>`;
     $("alt-outfits").innerHTML = "";
@@ -261,7 +255,6 @@ async function renderSuggestions() {
     renderHeroOutfit(data.primary);
     renderAltOutfits(data.alternatives || []);
   } catch {
-    // Fallback: local rule-based suggestion
     const suggestion = localSuggestOutfit();
     renderHeroOutfit(suggestion);
     renderAltOutfits([]);
@@ -285,10 +278,10 @@ function renderHeroOutfit(outfit) {
             <p>${item.name}</p>
           </div>`).join("")}
       </div>
-      ${outfit.rationale ? `<p class="outfit-rationale">✨ ${outfit.rationale}</p>` : ""}
+      ${outfit.rationale ? `<p class="outfit-rationale">${outfit.rationale}</p>` : ""}
       <div class="outfit-hero-actions">
-        <button class="btn-secondary" id="hero-log-btn">📅 Log this</button>
-        <button class="btn-primary" id="hero-save-btn">♥ Save</button>
+        <button class="btn-secondary" id="hero-log-btn">Log this</button>
+        <button class="btn-primary" id="hero-save-btn">Save outfit</button>
       </div>
     </div>`;
 
@@ -297,10 +290,7 @@ function renderHeroOutfit(outfit) {
 }
 
 function renderAltOutfits(alts) {
-  if (!alts.length) {
-    $("alt-outfits").innerHTML = "";
-    return;
-  }
+  if (!alts.length) { $("alt-outfits").innerHTML = ""; return; }
   $("alt-outfits").innerHTML = alts.slice(0, 4).map(outfit => {
     const items = (outfit.itemIds || []).map(id => wardrobeItems.find(i => i.id === id)).filter(Boolean);
     return `
@@ -330,12 +320,8 @@ function localSuggestOutfit() {
   const tops = wardrobeItems.filter(i => i.category === "top");
   const bottoms = wardrobeItems.filter(i => i.category === "bottom");
   const footwear = wardrobeItems.filter(i => i.category === "footwear");
-  const todayStr = new Date().toISOString().slice(0, 10);
-  const recentIds = new Set(
-    wearLog.slice(0, 3).flatMap(l => l.items || [])
-  );
+  const recentIds = new Set(wearLog.slice(0, 3).flatMap(l => l.items || []));
 
-  // Prefer least-worn items not worn recently
   const pickLeastWorn = arr => {
     const notRecent = arr.filter(i => !recentIds.has(i.id));
     const pool = notRecent.length ? notRecent : arr;
@@ -360,14 +346,8 @@ function localSuggestOutfit() {
 }
 
 // ─── ADD ITEM MODAL ────────────────────────────────────────────────────────
-$("add-item-btn").addEventListener("click", () => {
-  resetAddModal();
-  showModal("add-item-modal");
-});
-$("add-first-item")?.addEventListener("click", () => {
-  resetAddModal();
-  showModal("add-item-modal");
-});
+$("add-item-btn").addEventListener("click", () => { resetAddModal(); showModal("add-item-modal"); });
+$("add-first-item")?.addEventListener("click", () => { resetAddModal(); showModal("add-item-modal"); });
 
 function resetAddModal() {
   selectedPhotoFile = null;
@@ -379,11 +359,12 @@ function resetAddModal() {
   $("item-name").value = "";
   $("item-color").value = "";
   $("item-brand").value = "";
+  $("item-link-title").value = "";
+  $("item-link-url").value = "";
   document.querySelectorAll("#occasion-chips .chip-toggle, #season-chips .chip-toggle")
     .forEach(c => c.classList.remove("selected"));
 }
 
-// Photo capture
 $("take-photo-btn").addEventListener("click", () => {
   $("photo-input").setAttribute("capture", "environment");
   $("photo-input").click();
@@ -413,18 +394,14 @@ $("photo-input").addEventListener("change", e => {
   reader.readAsDataURL(file);
 });
 
-// Chip toggles
 document.querySelectorAll(".chip-toggle").forEach(chip => {
   chip.addEventListener("click", () => chip.classList.toggle("selected"));
 });
 
 // ─── AI ANALYZE ────────────────────────────────────────────────────────────
 $("analyze-btn").addEventListener("click", async () => {
-  if (!selectedPhotoBase64) {
-    showToast("Please take or upload a photo first");
-    return;
-  }
-  showLoading("Analyzing your clothing with AI...");
+  if (!selectedPhotoBase64) { showToast("Please take or upload a photo first"); return; }
+  showLoading("Analysing your clothing with AI...");
   try {
     const res = await fetch(`${API_URL}/analyze-image`, {
       method: "POST",
@@ -434,19 +411,11 @@ $("analyze-btn").addEventListener("click", async () => {
     if (!res.ok) throw new Error("API error");
     const data = await res.json();
     displayAnalysis(data);
-
-    // Auto-fill fields if empty
-    if (!$("item-category").value && data.category) {
-      $("item-category").value = data.category;
-    }
-    if (!$("item-name").value && data.description) {
-      $("item-name").value = data.description;
-    }
-    if (data.primary_color) {
-      $("item-color").value = data.primary_color;
-    }
+    if (!$("item-category").value && data.category) $("item-category").value = data.category;
+    if (!$("item-name").value && data.description) $("item-name").value = data.description;
+    if (data.primary_color) $("item-color").value = data.primary_color;
   } catch (e) {
-    showToast("AI analysis failed. You can still fill in details manually.");
+    showToast("AI analysis failed. Fill in details manually.");
     console.error(e);
   } finally {
     hideLoading();
@@ -488,8 +457,6 @@ function displayAnalysis(data) {
       <div class="analysis-value">${data.style_notes}</div>
     </div>` : ""}
   `;
-
-  // Store for saving
   $("analyze-btn").dataset.analysisJson = JSON.stringify(data);
 }
 
@@ -503,10 +470,10 @@ $("save-item-btn").addEventListener("click", async () => {
   showLoading("Saving item...");
   try {
     let photoUrl = null;
-    let photoPublicId = null;   // Cloudinary public_id, used if user deletes the item
+    let photoPublicId = null;
 
     if (selectedPhotoFile) {
-      showLoading("Uploading photo to Cloudinary...");
+      showLoading("Uploading photo...");
       const uploaded = await uploadToCloudinary(selectedPhotoFile);
       photoUrl = uploaded.url;
       photoPublicId = uploaded.publicId;
@@ -520,6 +487,13 @@ $("save-item-btn").addEventListener("click", async () => {
     const seasons = [...document.querySelectorAll("#season-chips .chip-toggle.selected")]
       .map(c => c.dataset.val);
 
+    // Collect purchase link if provided
+    const linkUrl = $("item-link-url").value.trim();
+    const linkTitle = $("item-link-title").value.trim();
+    const purchaseLinks = linkUrl
+      ? [{ url: linkUrl, title: linkTitle || linkUrl, addedAt: new Date().toISOString() }]
+      : [];
+
     const itemData = {
       name,
       category,
@@ -532,20 +506,17 @@ $("save-item-btn").addEventListener("click", async () => {
       seasons: seasons.length ? seasons : (analysis.seasons || []),
       styleNotes: analysis.style_notes || "",
       photoUrl,
-      photoPublicId,          // stored so we can delete from Cloudinary later
+      photoPublicId,
+      purchaseLinks,
       wearCount: 0,
       lastWorn: null,
       createdAt: serverTimestamp()
     };
 
-    await addDoc(
-      collection(db, "users", currentUser.uid, "items"),
-      itemData
-    );
-
+    await addDoc(collection(db, "users", currentUser.uid, "items"), itemData);
     hideModal("add-item-modal");
     resetAddModal();
-    showToast("Item added! 👗");
+    showToast("Item added to wardrobe");
   } catch (e) {
     showToast("Failed to save: " + e.message);
     console.error(e);
@@ -554,7 +525,6 @@ $("save-item-btn").addEventListener("click", async () => {
   }
 });
 
-// Close modal buttons
 document.querySelectorAll(".close-modal-btn").forEach(btn => {
   btn.addEventListener("click", () => hideModal(btn.dataset.modal));
 });
@@ -579,7 +549,10 @@ function showItemDetail(item) {
         ? `<img src="${item.photoUrl}" alt="${item.name}">`
         : `<div class="big-emoji">${getCategoryEmoji(item.category)}</div>`}
     </div>
-    <div class="wear-count-badge">📅 ${wearCountText}</div>
+    <div class="wear-count-badge">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+      ${wearCountText}
+    </div>
     <div class="detail-props">
       <div class="detail-prop">
         <div class="detail-prop-label">Category</div>
@@ -588,7 +561,7 @@ function showItemDetail(item) {
       <div class="detail-prop">
         <div class="detail-prop-label">Color</div>
         <div class="detail-prop-value">
-          ${item.colorHex ? `<span class="color-swatch-dot" style="background:${item.colorHex};width:14px;height:14px;display:inline-block;border-radius:50%;vertical-align:-2px;margin-right:4px"></span>` : ""}
+          ${item.colorHex ? `<span class="color-swatch-dot" style="background:${item.colorHex};width:12px;height:12px;display:inline-block;border-radius:50%;vertical-align:-1px;margin-right:4px"></span>` : ""}
           ${item.primaryColor || "—"}
         </div>
       </div>
@@ -603,19 +576,131 @@ function showItemDetail(item) {
     </div>
     ${item.occasions?.length ? `
     <div class="detail-tags">
-      ${item.occasions.map(o => `<span class="detail-tag">🏢 ${o}</span>`).join("")}
-      ${(item.seasons || []).map(s => `<span class="detail-tag">🌤 ${s}</span>`).join("")}
+      ${item.occasions.map(o => `<span class="detail-tag">${o}</span>`).join("")}
+      ${(item.seasons || []).map(s => `<span class="detail-tag">${s}</span>`).join("")}
     </div>` : ""}
-    ${item.styleNotes ? `<p style="font-size:13px;color:var(--text2);margin-top:10px;line-height:1.5">${item.styleNotes}</p>` : ""}
+    ${item.styleNotes ? `<p style="font-size:12px;color:var(--text2);margin-top:8px;line-height:1.5">${item.styleNotes}</p>` : ""}
+
+    <!-- Purchase Links Section -->
+    <div class="links-section" id="links-section">
+      <div class="links-section-header">
+        <span class="links-section-title">Purchase Links</span>
+        <button class="add-link-btn" id="show-add-link-btn">+ Add Link</button>
+      </div>
+      <div class="purchase-links-list" id="purchase-links-list">
+        ${renderPurchaseLinksHTML(item.purchaseLinks || [])}
+      </div>
+      <div class="link-inline-form" id="add-link-form" style="display:none">
+        <input type="text" id="new-link-title" placeholder="Shop name (e.g. Uniqlo, Amazon)">
+        <input type="url" id="new-link-url" placeholder="https://...">
+        <div class="link-inline-form-btns">
+          <button class="btn-primary" style="font-size:12px;padding:8px 14px;width:auto" id="save-link-btn">Save</button>
+          <button class="btn-secondary" style="font-size:12px;padding:8px 14px" id="cancel-link-btn">Cancel</button>
+        </div>
+      </div>
+    </div>
+
     <div class="combo-section" id="combo-section-loading">
-      <h4>Goes well with...</h4>
+      <h4>Goes well with</h4>
       <div class="combo-row">
-        <p style="font-size:13px;color:var(--text3)">Loading combinations...</p>
+        <p style="font-size:12px;color:var(--text3)">Loading combinations...</p>
       </div>
     </div>`;
 
   showModal("item-detail-modal");
   loadCombinations(item);
+  bindLinkFormEvents(item);
+}
+
+function renderPurchaseLinksHTML(links) {
+  if (!links.length) {
+    return `<p class="no-links-hint">No purchase links yet</p>`;
+  }
+  return links.map((link, idx) => `
+    <div class="purchase-link-card" data-link-idx="${idx}">
+      <div class="purchase-link-icon">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+      </div>
+      <div class="purchase-link-info">
+        <div class="purchase-link-title">${escapeHtml(link.title || link.url)}</div>
+        <div class="purchase-link-url">${escapeHtml(link.url)}</div>
+      </div>
+      <div class="purchase-link-actions">
+        <button class="link-action-btn open-link-btn" data-url="${escapeHtml(link.url)}" title="Open link">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+        </button>
+        <button class="link-action-btn remove-link-btn" data-idx="${idx}" title="Remove link">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+    </div>`).join("");
+}
+
+function bindLinkFormEvents(item) {
+  $("show-add-link-btn")?.addEventListener("click", () => {
+    $("add-link-form").style.display = "flex";
+    $("show-add-link-btn").style.display = "none";
+    $("new-link-url").focus();
+  });
+
+  $("cancel-link-btn")?.addEventListener("click", () => {
+    $("add-link-form").style.display = "none";
+    $("show-add-link-btn").style.display = "inline-flex";
+    $("new-link-title").value = "";
+    $("new-link-url").value = "";
+  });
+
+  $("save-link-btn")?.addEventListener("click", async () => {
+    const url = $("new-link-url").value.trim();
+    if (!url) { showToast("Please enter a URL"); return; }
+    const title = $("new-link-title").value.trim() || url;
+    await addPurchaseLink(item, { url, title, addedAt: new Date().toISOString() });
+  });
+
+  // Open / remove link buttons (delegated)
+  $("purchase-links-list")?.addEventListener("click", async e => {
+    const openBtn = e.target.closest(".open-link-btn");
+    const removeBtn = e.target.closest(".remove-link-btn");
+    if (openBtn) {
+      window.open(openBtn.dataset.url, "_blank", "noopener");
+    }
+    if (removeBtn) {
+      const idx = parseInt(removeBtn.dataset.idx, 10);
+      await removePurchaseLink(item, idx);
+    }
+  });
+}
+
+async function addPurchaseLink(item, link) {
+  try {
+    const newLinks = [...(item.purchaseLinks || []), link];
+    await updateDoc(doc(db, "users", currentUser.uid, "items", item.id), { purchaseLinks: newLinks });
+    // Update local state
+    item.purchaseLinks = newLinks;
+    currentItemForDetail = item;
+    $("purchase-links-list").innerHTML = renderPurchaseLinksHTML(newLinks);
+    $("add-link-form").style.display = "none";
+    $("show-add-link-btn").style.display = "inline-flex";
+    $("new-link-title").value = "";
+    $("new-link-url").value = "";
+    showToast("Link saved");
+  } catch (e) {
+    showToast("Failed to save link");
+  }
+}
+
+async function removePurchaseLink(item, idx) {
+  if (!confirm("Remove this link?")) return;
+  try {
+    const newLinks = (item.purchaseLinks || []).filter((_, i) => i !== idx);
+    await updateDoc(doc(db, "users", currentUser.uid, "items", item.id), { purchaseLinks: newLinks });
+    item.purchaseLinks = newLinks;
+    currentItemForDetail = item;
+    $("purchase-links-list").innerHTML = renderPurchaseLinksHTML(newLinks);
+    showToast("Link removed");
+  } catch (e) {
+    showToast("Failed to remove link");
+  }
 }
 
 async function loadCombinations(item) {
@@ -645,7 +730,6 @@ async function loadCombinations(item) {
     const data = await res.json();
     renderCombinations(data.combinations || []);
   } catch {
-    // Fallback: suggest items of complementary categories
     const comboItems = wardrobeItems
       .filter(i => i.id !== item.id && i.category !== item.category)
       .slice(0, 6);
@@ -658,7 +742,7 @@ function renderCombinations(combos) {
   if (!section) return;
   if (!combos.length) {
     section.querySelector(".combo-row").innerHTML =
-      `<p style="font-size:13px;color:var(--text3)">Add more items to see combinations.</p>`;
+      `<p style="font-size:12px;color:var(--text3)">Add more items to see combinations.</p>`;
     return;
   }
   const row = combos.slice(0, 8).map(c => {
@@ -679,7 +763,6 @@ $("delete-item-btn").addEventListener("click", async () => {
   if (!currentItemForDetail || !confirm("Delete this item?")) return;
   showLoading("Deleting...");
   try {
-    // Delete photo from Cloudinary (via backend, which holds the API secret)
     if (currentItemForDetail.photoPublicId) {
       await deleteFromCloudinary(currentItemForDetail.photoPublicId);
     }
@@ -706,11 +789,9 @@ async function saveOutfit(itemIds, rationale = "") {
   if (!currentUser || !itemIds?.length) return;
   try {
     await addDoc(collection(db, "users", currentUser.uid, "outfits"), {
-      itemIds,
-      rationale,
-      createdAt: serverTimestamp()
+      itemIds, rationale, createdAt: serverTimestamp()
     });
-    showToast("Outfit saved! ♥");
+    showToast("Outfit saved");
   } catch (e) {
     showToast("Failed to save outfit");
   }
@@ -721,21 +802,17 @@ async function logOutfitDirectly(itemIds) {
   const todayStr = new Date().toISOString().slice(0, 10);
   try {
     await addDoc(collection(db, "users", currentUser.uid, "wearlog"), {
-      date: todayStr,
-      items: itemIds,
-      loggedAt: serverTimestamp()
+      date: todayStr, items: itemIds, loggedAt: serverTimestamp()
     });
-    // Update wear counts
     for (const id of itemIds) {
       const item = wardrobeItems.find(i => i.id === id);
       if (item) {
         await updateDoc(doc(db, "users", currentUser.uid, "items", id), {
-          wearCount: (item.wearCount || 0) + 1,
-          lastWorn: todayStr
+          wearCount: (item.wearCount || 0) + 1, lastWorn: todayStr
         });
       }
     }
-    showToast("Outfit logged for today! 📅");
+    showToast("Outfit logged for today");
   } catch (e) {
     showToast("Failed to log outfit");
   }
@@ -747,9 +824,9 @@ function renderOutfits() {
   if (!savedOutfits.length) {
     list.innerHTML = `
       <div class="empty-state">
-        <span>👔</span>
+        <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
         <p>No outfits saved yet</p>
-        <p class="empty-hint">Get a suggestion on the Home tab and save it!</p>
+        <p class="empty-hint">Get a suggestion on the Home tab and save it</p>
       </div>`;
     return;
   }
@@ -768,19 +845,16 @@ function renderOutfits() {
               : `<div class="outfit-item-placeholder">${getCategoryEmoji(item.category)}</div>`
           ).join("")}
         </div>
-        ${outfit.rationale ? `<p style="font-size:12px;color:var(--text2);padding:0 12px 10px;line-height:1.4">${outfit.rationale}</p>` : ""}
-        <div style="display:flex;gap:8px;padding:0 12px 12px">
-          <button class="btn-secondary" style="flex:1;font-size:13px" onclick="wearOutfit('${outfit.id}')">📅 Wear today</button>
-          <button class="btn-danger" style="padding:8px 14px;font-size:13px" onclick="deleteOutfit('${outfit.id}')">Delete</button>
+        ${outfit.rationale ? `<p style="font-size:11px;color:var(--text2);padding:0 12px 8px;line-height:1.4">${outfit.rationale}</p>` : ""}
+        <div style="display:flex;gap:6px;padding:0 12px 12px">
+          <button class="btn-secondary" style="flex:1;font-size:12px" onclick="wearOutfit('${outfit.id}')">Wear today</button>
+          <button class="btn-danger" style="padding:8px 12px;font-size:12px" onclick="deleteOutfit('${outfit.id}')">Delete</button>
         </div>
       </div>`;
   }).join("");
 }
 
-$("create-outfit-btn").addEventListener("click", () => {
-  // Open log modal to pick items as a manual outfit
-  openLogModal(true);
-});
+$("create-outfit-btn").addEventListener("click", () => openLogModal(true));
 
 window.wearOutfit = async (outfitId) => {
   const outfit = savedOutfits.find(o => o.id === outfitId);
@@ -810,14 +884,13 @@ function renderLog() {
         ${item.name}
       </div>`).join("");
   } else {
-    worn.innerHTML = `<span style="font-size:13px;color:var(--text3)">Nothing logged yet</span>`;
+    worn.innerHTML = `<span style="font-size:12px;color:var(--text3)">Nothing logged yet</span>`;
   }
 
-  // History
   const hist = $("wear-history");
   const historyEntries = wearLog.filter(l => l.date !== todayStr).slice(0, 20);
   if (!historyEntries.length) {
-    hist.innerHTML = `<p style="font-size:13px;color:var(--text3);text-align:center;padding:16px">No wear history yet</p>`;
+    hist.innerHTML = `<p style="font-size:12px;color:var(--text3);text-align:center;padding:16px">No wear history yet</p>`;
     return;
   }
   hist.innerHTML = historyEntries.map(entry => {
@@ -876,11 +949,10 @@ $("analyze-gaps-btn").addEventListener("click", runGapAnalysis);
 $("run-gap-btn")?.addEventListener("click", runGapAnalysis);
 
 async function renderGaps() {
-  // Render existing gap data if available — user triggers fresh analysis
   if (!wardrobeItems.length) {
     $("gap-analysis").innerHTML = `
       <div class="empty-state">
-        <span>🛍️</span>
+        <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
         <p>Add clothes to discover wardrobe gaps</p>
       </div>`;
     return;
@@ -889,11 +961,8 @@ async function renderGaps() {
 }
 
 async function runGapAnalysis() {
-  if (wardrobeItems.length < 3) {
-    showToast("Add more items to get gap analysis");
-    return;
-  }
-  showLoading("Analyzing your wardrobe...");
+  if (wardrobeItems.length < 3) { showToast("Add more items to get gap analysis"); return; }
+  showLoading("Analysing your wardrobe...");
   try {
     const payload = {
       items: wardrobeItems.map(i => ({
@@ -914,8 +983,7 @@ async function runGapAnalysis() {
     const data = await res.json();
     displayGaps(data.gaps || []);
   } catch {
-    const localGaps = runLocalGapAnalysis();
-    displayGaps(localGaps);
+    displayGaps(runLocalGapAnalysis());
   } finally {
     hideLoading();
   }
@@ -926,9 +994,7 @@ function runLocalGapAnalysis() {
   wardrobeItems.forEach(i => { cats[i.category] = (cats[i.category] || 0) + 1; });
   const gaps = [];
 
-  const idealCounts = {
-    top: 7, bottom: 5, footwear: 3, outerwear: 2, accessory: 3
-  };
+  const idealCounts = { top: 7, bottom: 5, footwear: 3, outerwear: 2, accessory: 3 };
   Object.entries(idealCounts).forEach(([cat, ideal]) => {
     const have = cats[cat] || 0;
     if (have < ideal) {
@@ -941,13 +1007,11 @@ function runLocalGapAnalysis() {
     }
   });
 
-  // Check for season gaps
   const hasSummer = wardrobeItems.some(i => (i.seasons || []).includes("summer"));
   const hasWinter = wardrobeItems.some(i => (i.seasons || []).includes("winter"));
   if (!hasSummer) gaps.push({ icon: "☀️", title: "Summer wear", reason: "No summer-specific items found — consider light cottons and breathable fabrics.", priority: "medium" });
-  if (!hasWinter) gaps.push({ icon: "🧥", title: "Winter / formal layer", reason: "No winter-specific items. A versatile jacket can double as office wear.", priority: "low" });
+  if (!hasWinter) gaps.push({ icon: "🧥", title: "Winter layer", reason: "No winter-specific items. A versatile jacket can double as office wear.", priority: "low" });
 
-  // Rarely worn items
   const rarelyWorn = wardrobeItems.filter(i => (i.wearCount || 0) === 0).slice(0, 3);
   if (rarelyWorn.length > 2) {
     gaps.push({
@@ -965,21 +1029,129 @@ function displayGaps(gaps) {
   if (!gaps.length) {
     container.innerHTML = `
       <div class="empty-state">
-        <span>✅</span>
-        <p>Your wardrobe looks well-rounded!</p>
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+        <p>Your wardrobe looks well-rounded</p>
         <p class="empty-hint">Keep wearing and logging to track patterns.</p>
       </div>`;
     return;
   }
-  container.innerHTML = gaps.map(gap => `
-    <div class="gap-card">
-      <div class="gap-card-header">
-        <div class="gap-icon">${gap.icon}</div>
-        <div>
-          <div class="gap-title">${gap.title}</div>
-          <div class="gap-reason">${gap.reason}</div>
-          <span class="gap-priority ${gap.priority}">${gap.priority.toUpperCase()} priority</span>
+
+  container.innerHTML = gaps.map((gap, idx) => {
+    const gapLinks = wishlistItems.filter(w => w.gapTitle === gap.title);
+    return `
+      <div class="gap-card" data-gap-idx="${idx}">
+        <div class="gap-card-header">
+          <div class="gap-icon">${gap.icon}</div>
+          <div>
+            <div class="gap-title">${gap.title}</div>
+            <div class="gap-reason">${gap.reason}</div>
+            <span class="gap-priority ${gap.priority}">${gap.priority}</span>
+          </div>
         </div>
+        <div class="gap-shop-row">
+          <button class="gap-find-btn" data-gap-idx="${idx}">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+            Save a link
+          </button>
+          <div class="gap-link-form" id="gap-link-form-${idx}" style="display:none">
+            <input type="text" placeholder="Shop name (e.g. H&amp;M, Zara)" id="gap-link-title-${idx}">
+            <input type="url" placeholder="https://..." id="gap-link-url-${idx}">
+            <div class="gap-link-form-btns">
+              <button class="btn-primary" style="font-size:12px;padding:7px 12px;width:auto" onclick="saveGapLink(${idx}, '${escapeHtml(gap.title)}')">Save</button>
+              <button class="btn-secondary" style="font-size:12px;padding:7px 10px" onclick="toggleGapLinkForm(${idx})">Cancel</button>
+            </div>
+          </div>
+          ${gapLinks.length ? `
+          <div class="gap-saved-links" id="gap-saved-links-${idx}">
+            ${gapLinks.map(link => `
+              <div class="gap-saved-link">
+                <div class="gap-saved-link-info">
+                  <div class="gap-saved-link-title">${escapeHtml(link.title || link.url)}</div>
+                  <div class="gap-saved-link-url">${escapeHtml(link.url)}</div>
+                </div>
+                <div class="gap-saved-link-actions">
+                  <button class="link-action-btn" onclick="window.open('${escapeHtml(link.url)}','_blank','noopener')" title="Open">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                  </button>
+                  <button class="link-action-btn" onclick="deleteWishlistItem('${link.id}')" title="Remove">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                  </button>
+                </div>
+              </div>`).join("")}
+          </div>` : ""}
+        </div>
+      </div>`;
+  }).join("");
+
+  // Bind find-btn clicks
+  container.querySelectorAll(".gap-find-btn").forEach(btn => {
+    btn.addEventListener("click", () => toggleGapLinkForm(parseInt(btn.dataset.gapIdx)));
+  });
+}
+
+window.toggleGapLinkForm = (idx) => {
+  const form = $(`gap-link-form-${idx}`);
+  if (!form) return;
+  const isHidden = form.style.display === "none";
+  form.style.display = isHidden ? "flex" : "none";
+  if (isHidden) $(`gap-link-url-${idx}`)?.focus();
+};
+
+window.saveGapLink = async (idx, gapTitle) => {
+  const url = $(`gap-link-url-${idx}`)?.value.trim();
+  if (!url) { showToast("Please enter a URL"); return; }
+  const title = $(`gap-link-title-${idx}`)?.value.trim() || url;
+  try {
+    await addDoc(collection(db, "users", currentUser.uid, "wishlist"), {
+      gapTitle,
+      title,
+      url,
+      addedAt: serverTimestamp()
+    });
+    showToast("Link saved to shopping list");
+    toggleGapLinkForm(idx);
+  } catch (e) {
+    showToast("Failed to save link");
+  }
+};
+
+window.deleteWishlistItem = async (id) => {
+  if (!confirm("Remove from shopping list?")) return;
+  try {
+    await deleteDoc(doc(db, "users", currentUser.uid, "wishlist", id));
+    showToast("Removed from shopping list");
+  } catch { showToast("Error removing"); }
+};
+
+// ─── SHOPPING LIST (Gaps tab footer) ───────────────────────────────────────
+function renderShoppingList() {
+  const container = $("shopping-list");
+  const header = $("shopping-list-header");
+  if (!container) return;
+
+  if (!wishlistItems.length) {
+    if (header) header.style.display = "none";
+    container.innerHTML = "";
+    return;
+  }
+
+  if (header) header.style.display = "flex";
+  container.innerHTML = wishlistItems.map(item => `
+    <div class="shopping-list-item">
+      <div class="shopping-list-icon">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
+      </div>
+      <div class="shopping-list-info">
+        <div class="shopping-list-title">${escapeHtml(item.title || item.url)}</div>
+        <div class="shopping-list-subtitle">${item.gapTitle ? "For: " + escapeHtml(item.gapTitle) + " · " : ""}${escapeHtml(item.url)}</div>
+      </div>
+      <div class="shopping-list-actions">
+        <button class="link-action-btn" onclick="window.open('${escapeHtml(item.url)}','_blank','noopener')" title="Open">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+        </button>
+        <button class="link-action-btn" onclick="deleteWishlistItem('${item.id}')" title="Remove">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
       </div>
     </div>`).join("");
 }
@@ -988,9 +1160,18 @@ function displayGaps(gaps) {
 function getCategoryEmoji(cat) {
   const map = {
     top: "👕", bottom: "👖", footwear: "👟", outerwear: "🧥",
-    accessory: "👜", formal: "👔", ethnic: "🥻", innerwear: "🩲"
+    accessory: "🕶️", formal: "👔", ethnic: "🧣", innerwear: "🩲"
   };
-  return map[cat] || "👗";
+  return map[cat] || "👔";
+}
+
+function escapeHtml(str) {
+  if (!str) return "";
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
 function getCurrentSeason() {
